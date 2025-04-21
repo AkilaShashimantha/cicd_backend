@@ -42,7 +42,10 @@ app.use('/api/', limiter);
 
 // CORS Configuration
 app.use(cors({
-  origin: config.ALLOWED_ORIGINS,
+  origin: [
+    'https://cicd-frontend-alpha.vercel.app/', // Your live frontend
+    'http://localhost:3000' // For local development
+  ],
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true
 }));
