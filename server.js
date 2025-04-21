@@ -29,10 +29,13 @@ const config = {
 // MONGODB CONNECTION
 // =============================================
 mongoose.connect(config.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
   serverSelectionTimeoutMS: 10000,
-  socketTimeoutMS: 45000
+  socketTimeoutMS: 45000,
+  ssl: true,                   // Enforce TLS/SSL
+  authSource: 'admin',         // Specify authentication database
+  retryWrites: true,           // Enable retryable writes
+  retryReads: true,            // Enable retryable reads
+      
 })
 .then(() => console.log('✅ MongoDB connected successfully to Image_upload database'))
 .catch(err => {
