@@ -7,13 +7,24 @@ const cors = require('cors');
 
 const app = express();
 
+const allowedOrigins = [
+  'https://cicd-frontend-git-main-akila-shashimanthas-projects.vercel.app',
+  'https://cicd-frontend-alpha.vercel.app',
+  'http://localhost:3000'
+];
 // Enable CORS with proper configuration for production
 app.use(cors({
-  origin: ['https://cicd-frontend-alpha.vercel.app', 'http://localhost:3000'],
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type'],
+  credentials: true
 }));
-
 // =============================================
 // CONFIGURATION
 // =============================================
