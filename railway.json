@@ -1,8 +1,14 @@
 {
-    "builds": [
-      {
-        "src": "package.json",
-        "use": "@railway/node"
+  "build": {
+    "nixpacks": {
+      "providers": {
+        "node": {
+          "version": "18"
+        }
       }
-    ]
+    }
+  },
+  "deploy": {
+    "startCommand": "node server.js"
   }
+}
