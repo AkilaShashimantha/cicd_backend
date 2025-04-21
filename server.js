@@ -20,35 +20,35 @@ const config = {
   UPLOAD_DIR: path.join(__dirname, 'uploads'),
   MAX_FILE_SIZE: 5 * 1024 * 1024, // 5MB
   NODE_ENV: process.env.NODE_ENV || 'development',
-  ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000'],
-  API_RATE_LIMIT_WINDOW: process.env.API_RATE_LIMIT_WINDOW || 15 * 60 * 1000, // 15 minutes
-  API_RATE_LIMIT_MAX: process.env.API_RATE_LIMIT_MAX || 100
+  ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000', 'https://cicd-frontend-alpha.vercel.app'],
 };
 
 // =============================================
-// SECURITY MIDDLEWARE
+// MIDDLEWARE
 // =============================================
 app.use(helmet());
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: config.API_RATE_LIMIT_WINDOW,
-  max: config.API_RATE_LIMIT_MAX,
-  message: 'Too many requests from this IP, please try again later'
-});
-app.use('/api/', limiter);
-
-// CORS Configuration
+// Enhanced CORS configuration
 app.use(cors({
-  origin: [
-    'https://cicd-frontend-alpha.vercel.app', // Remove trailing slash
-    'http://localhost:3000'
-  ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  origin: function(origin, callback) {
+    if (!origin || config.ALLOWED_ORIGINS.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ['GET', 'POST', 'OPTIONS'],
   credentials: true
 }));
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100 // limit each IP to 100 requests per windowMs
+});
+app.use('/api/', limiter);
 
 // Logging
 if (config.NODE_ENV === 'development') {
@@ -56,17 +56,16 @@ if (config.NODE_ENV === 'development') {
 }
 
 // =============================================
-// MONGODB CONNECTION
+// DATABASE CONNECTION
 // =============================================
 mongoose.connect(config.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-  serverSelectionTimeoutMS: 5000,
-  socketTimeoutMS: 45000
+  serverSelectionTimeoutMS: 5000
 })
-.then(() => console.log('✅ MongoDB connected successfully to Image_upload database'))
+.then(() => console.log('✅ MongoDB connected successfully'))
 .catch(err => {
-  console.error('❌ MongoDB connection failed:', err.message);
+  console.error('❌ MongoDB connection error:', err);
   process.exit(1);
 });
 
@@ -82,10 +81,10 @@ const imageSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-const Image = mongoose.model('Image', imageSchema, 'images');
+const Image = mongoose.model('Image', imageSchema);
 
 // =============================================
-// FILE UPLOAD CONFIG
+// FILE UPLOAD CONFIGURATION
 // =============================================
 if (!fs.existsSync(config.UPLOAD_DIR)) {
   fs.mkdirSync(config.UPLOAD_DIR, { recursive: true });
@@ -98,7 +97,7 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
-    const uniqueName = `img-${Date.now()}${ext}`;
+    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
     cb(null, uniqueName);
   }
 });
@@ -108,7 +107,7 @@ const fileFilter = (req, file, cb) => {
   if (allowedTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Invalid file type. Only JPG, PNG, GIF, or WEBP images are allowed'), false);
+    cb(new Error('Invalid file type. Only images are allowed (JPEG, PNG, GIF, WEBP)'), false);
   }
 };
 
@@ -119,20 +118,19 @@ const upload = multer({
 });
 
 // =============================================
-// API ENDPOINTS
+// ROUTES
 // =============================================
 
 /**
  * @route POST /api/upload
  * @desc Upload an image
- * @access Public
  */
 app.post('/api/upload', upload.single('image'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ 
         success: false,
-        error: 'No file uploaded or file type not allowed' 
+        error: 'No file uploaded or invalid file type' 
       });
     }
 
@@ -146,13 +144,16 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
 
     const savedImage = await newImage.save();
     
+    // Construct proper URL
+    const imageUrl = `${req.protocol}://${req.get('host')}/uploads/${savedImage.filename}`;
+
     res.status(201).json({
       success: true,
       message: 'Image uploaded successfully',
       data: {
         id: savedImage._id,
         name: savedImage.originalname,
-        url: `${req.protocol}://${req.get('host')}/uploads/${savedImage.filename}`,
+        url: imageUrl,
         size: savedImage.size,
         uploadedAt: savedImage.createdAt
       }
@@ -161,7 +162,8 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
     console.error('Upload error:', err);
     res.status(500).json({ 
       success: false,
-      error: 'Server error during upload' 
+      error: 'Server error during upload',
+      details: config.NODE_ENV === 'development' ? err.message : undefined
     });
   }
 });
@@ -169,11 +171,10 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
 /**
  * @route GET /api/images
  * @desc Get all uploaded images
- * @access Public
  */
 app.get('/api/images', async (req, res) => {
   try {
-    const images = await Image.find().sort({ createdAt: -1 }).lean();
+    const images = await Image.find().sort({ createdAt: -1 });
     
     const response = images.map(img => ({
       id: img._id,
@@ -186,20 +187,23 @@ app.get('/api/images', async (req, res) => {
     res.json({ 
       success: true,
       count: response.length,
-      data: response
+      images: response
     });
   } catch (err) {
     console.error('Error fetching images:', err);
     res.status(500).json({ 
       success: false,
-      error: 'Failed to fetch images' 
+      error: 'Failed to fetch images',
+      details: config.NODE_ENV === 'development' ? err.message : undefined
     });
   }
 });
 
 // =============================================
-// STATIC FILES AND SERVER START
+// STATIC FILES AND ERROR HANDLING
 // =============================================
+
+// Serve uploaded files statically
 app.use('/uploads', express.static(config.UPLOAD_DIR));
 
 // Health check endpoint
@@ -208,7 +212,8 @@ app.get('/api/health', (req, res) => {
     status: 'OK',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    environment: config.NODE_ENV
   });
 });
 
@@ -222,32 +227,42 @@ app.use((req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error('Server error:', err.stack);
 
   if (err instanceof multer.MulterError) {
     return res.status(400).json({ 
       success: false,
-      error: err.message 
+      error: err.message || 'File upload error'
     });
   }
 
   res.status(500).json({ 
     success: false,
-    error: 'Internal server error' 
+    error: 'Internal server error',
+    details: config.NODE_ENV === 'development' ? err.message : undefined
   });
 });
 
-// Server startup
+// =============================================
+// SERVER STARTUP
+// =============================================
 const server = app.listen(config.PORT, () => {
   console.log(`🚀 Server running in ${config.NODE_ENV} mode on port ${config.PORT}`);
-  console.log(`📂 Uploads directory: ${config.UPLOAD_DIR}`);
+  console.log(`📁 Upload directory: ${config.UPLOAD_DIR}`);
   console.log(`🌍 Allowed origins: ${config.ALLOWED_ORIGINS.join(', ')}`);
+  console.log(`🔗 Health check: http://localhost:${config.PORT}/api/health`);
 });
 
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (err) => {
-  console.error('Unhandled Rejection:', err);
-  server.close(() => process.exit(1));
+// Handle shutdown gracefully
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received. Shutting down gracefully...');
+  server.close(() => {
+    console.log('Server closed');
+    mongoose.connection.close(false, () => {
+      console.log('MongoDB connection closed');
+      process.exit(0);
+    });
+  });
 });
 
 module.exports = server;
