@@ -43,8 +43,8 @@ app.use('/api/', limiter);
 // CORS Configuration
 app.use(cors({
   origin: [
-    'https://cicd-frontend-alpha.vercel.app/', // Your live frontend
-    'http://localhost:3000' // For local development
+    'https://cicd-frontend-alpha.vercel.app', // Remove trailing slash
+    'http://localhost:3000'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true
