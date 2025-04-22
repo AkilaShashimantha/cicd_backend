@@ -1,28 +1,35 @@
-name: Backend CI/CD (No Docker)
+name: Backend CI/CD
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
+
+env:
+  NODE_ENV: test
 
 jobs:
-  test-and-deploy:
+  test:
     runs-on: ubuntu-latest
-
     services:
       mongodb:
         image: mongo:6
         ports:
           - 27017:27017
         env:
-          MONGO_INITDB_ROOT_USERNAME: akilashashimantha84
-          MONGO_INITDB_ROOT_PASSWORD: 75yT5kSc38aAtsVS
+          MONGO_INITDB_ROOT_USERNAME: testuser
+          MONGO_INITDB_ROOT_PASSWORD: testpass
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand(\"ping\").ok'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 3
 
     steps:
       - uses: actions/checkout@v3
 
-      - name: Set up Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 18
@@ -36,15 +43,23 @@ jobs:
 
       - name: Run tests
         env:
-          MONGODB_URI: "mongodb+srv://akilashashimantha84:75yT5kSc38aAtsVS@cluster0.g7rrc6i.mongodb.net/Image_upload?retryWrites=true&w=majority&appName=Cluster0"
+          MONGODB_URI: mongodb://testuser:testpass@localhost:27017/test?authSource=admin
         run: npm test
 
-      - name: Publish to GitHub Packages (NPM)
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 18
           registry-url: https://npm.pkg.github.com
           scope: '@${{ github.repository_owner }}'
+
+      - name: Publish to GitHub Packages
         run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -59,3 +74,4 @@ jobs:
             MONGODB_URI=${{ secrets.MONGODB_URI }}
             PORT=3001
             BASE_URL=https://cicdbackend-production.up.railway.app
+            NODE_ENV=production
