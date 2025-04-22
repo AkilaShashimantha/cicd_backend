@@ -9,6 +9,7 @@ const app = express();
 
 const allowedOrigins = [
   'https://cicd-frontend-git-main-akila-shashimanthas-projects.vercel.app',
+  'https://cicd-frontend-mesb3fyx7-akila-shashimanthas-projects.vercel.app',
   'https://cicd-frontend-alpha.vercel.app',
   'http://localhost:3000'
 ];
