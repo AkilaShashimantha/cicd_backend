@@ -1,0 +1,61 @@
+name: Backend CI/CD (No Docker)
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+
+    services:
+      mongodb:
+        image: mongo:6
+        ports:
+          - 27017:27017
+        env:
+          MONGO_INITDB_ROOT_USERNAME: akilashashimantha84
+          MONGO_INITDB_ROOT_PASSWORD: 75yT5kSc38aAtsVS
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linting
+        run: npm run lint
+
+      - name: Run tests
+        env:
+          MONGODB_URI: "mongodb+srv://akilashashimantha84:75yT5kSc38aAtsVS@cluster0.g7rrc6i.mongodb.net/Image_upload?retryWrites=true&w=majority&appName=Cluster0"
+        run: npm test
+
+      - name: Publish to GitHub Packages (NPM)
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          registry-url: https://npm.pkg.github.com
+          scope: '@${{ github.repository_owner }}'
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy to Railway
+        uses: railwayapp/action@v1
+        with:
+          service: backend
+          environment: production
+          token: ${{ secrets.RAILWAY_TOKEN }}
+          variables: |
+            MONGODB_URI=${{ secrets.MONGODB_URI }}
+            PORT=3001
+            BASE_URL=https://cicdbackend-production.up.railway.app
